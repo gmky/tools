@@ -1,0 +1,52 @@
+#!/bin/sh
+echo "Enter git host:"
+read GIT_HOST
+
+echo "Enter git token:"
+read GIT_TOKEN
+
+echo "Enter git user:"
+read GIT_USER
+
+echo "Enter branch to clone:"
+read branch
+
+echo "Enter group id:"
+read group
+
+if [ -z "$GIT_HOST" ]; then
+  echo "No host was provided. Please use -e GIT_HOST=you-gitlab-host";
+  echo "Exited";
+  exit 1
+fi
+
+if [ -z "$GIT_TOKEN" ]; then
+  echo "No token was provided. Please use -e GIT_TOKEN=your-access-token";
+  echo "Exited";
+  exit 1;
+fi
+
+if [ -z "$GIT_USER" ]; then
+  echo "No user was provided. Please use -e GIT_USER=your-git-user";
+  echo "Exited";
+  exit 1;
+fi
+
+if [ -z "$branch" ]; then 
+  branch="main"; 
+  echo "No branch was provided. Using default branch: ${branch}"
+fi
+
+if [ -z "$group" ]; then
+  echo "No group was provided.";
+  echo "Exited"
+  exit 1;
+fi
+
+for repo in $(curl -s --header "PRIVATE-TOKEN: $GIT_TOKEN" $GIT_HOST/api/v4/groups/$group | jq '.projects[].http_url_to_repo' | tr -d '"');
+do
+  echo '----------------------------------------';
+  echo $repo;
+  echo "Clone using username: ${GIT_USER}"
+  git clone --branch $branch ${repo/:\/\//://${GIT_USER}:${GIT_TOKEN}@}
+done;

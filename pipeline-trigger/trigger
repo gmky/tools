@@ -1,0 +1,92 @@
+#!/bin/sh
+while getopts "h:a:u:p:o:b:i:e:" opt
+do
+    case "$opt" in
+        h) HOST="$OPTARG" ;;
+        a) ACCESS_TOKEN="$OPTARG" ;;
+        u) API_ENDPOINT="$OPTARG" ;;
+        p) TRIGGER_TOKEN="$OPTARG" ;;
+        o) SHOW_OUTPUT="$OPTARG" ;;
+        b) PROJECT_BRANCH="$OPTARG" ;;
+        i) PROJECT_ID="$OPTARG" ;;
+        e) ARGS+=($OPTARG) ;;
+        *) echo "Invalid";;
+    esac
+done
+
+# echo "HOST              : $HOST"
+# echo "ACCESS_TOKEN      : $ACCESS_TOKEN"
+# echo "API_ENDPOINT      : $API_ENDPOINT"
+# echo "TRIGGER_TOKEN     : $TRIGGER_TOKEN"
+# echo "SHOW_OUTPUT       : $SHOW_OUTPUT"
+# echo "PROJECT_BRANCH    : $PROJECT_BRANCH"
+# echo "PROJECT_ID        : $PROJECT_ID"
+# echo "ARGS              : ${ARGS[@]}"
+
+ARGS_STRING=""
+
+for val in "${ARGS[@]}"; do
+    KEY=${val%=*}
+    VALUE=${val#*=}
+    ARGS_STRING="-F "variables[$KEY]=${VALUE}" ${ARGS_STRING}"
+done
+
+API_URI="${HOST}${API_ENDPOINT}/${PROJECT_ID}/trigger/pipeline"
+
+CURL_CMD="curl -X POST -s -F token=${TRIGGER_TOKEN} -F ref=${PROJECT_BRANCH} ${ARGS_STRING} $API_URI"
+
+CURL_RESPONSE=$($CURL_CMD | jq -r '.')
+
+PIPELINE_ID=$(echo $CURL_RESPONSE | jq -r '.id')
+
+PIPELINE_STATUS=$(echo $CURL_RESPONSE | jq -r '.status')
+PIPELINE_URL=$(echo $CURL_RESPONSE | jq -r '.web_url')
+
+# echo "PIPELINE_ID       : $PIPELINE_ID"
+# echo "PIPELINE_STATUS   : $PIPELINE_STATUS"
+
+if [ $PIPELINE_STATUS = "created" ]
+then
+    echo "Pipeline has been created. Waiting for pipeline ${PIPELINE_ID} to finish"
+    echo "See detail at: ${PIPELINE_URL}"
+
+    # CURL_CMD="curl -s --header "PRIVATE-TOKEN: ${ACCESS_TOKEN}" "${HOST}${API_ENDPOINT}/${PROJECT_ID}/pipelines/${PIPELINE_ID}""
+
+    # echo "STATUS: $(${CURL_CMD})"
+
+    while [ $PIPELINE_STATUS != 'success' ] && [ $PIPELINE_STATUS != 'failed' ] && [ $PIPELINE_STATUS != 'canceled' ] && [ $PIPELINE_STATUS != 'skipped' ] && [ $PIPELINE_STATUS != 'manual' ] && [ $PIPELINE_STATUS != 'scheduled' ]
+    do
+        sleep 5
+        PIPELINE_STATUS=$(curl -s --header "PRIVATE-TOKEN: ${ACCESS_TOKEN}" "${HOST}${API_ENDPOINT}/${PROJECT_ID}/pipelines/${PIPELINE_ID}" | jq -r '.status')
+        echo -n "."
+    done
+
+    echo ""
+
+    if [ $SHOW_OUTPUT = 1 ]
+    then
+        for JOB in $(curl -s --header "PRIVATE-TOKEN: ${ACCESS_TOKEN}" "${HOST}${API_ENDPOINT}/${PROJECT_ID}/pipelines/${PIPELINE_ID}/jobs" | jq -r '.[] | .id')
+        do
+            JOB_DETAIL=$(curl -s --header "PRIVATE-TOKEN: ${ACCESS_TOKEN}" "${HOST}${API_ENDPOINT}/${PROJECT_ID}/jobs/${JOB}" | jq -r '.')
+            JOB_STAGE=$(echo $JOB_DETAIL | jq -r '.stage')
+            JOB_STATUS=$(echo $JOB_DETAIL | jq -r '.status')
+            JOB_ALLOW_FAILURE=$(echo $JOB_DETAIL | jq -r '.allow_failure')
+
+            if [ $JOB_STAGE != 'deploy' ] && [ $JOB_STATUS = 'failed' ] && [ $JOB_ALLOW_FAILURE = 'false' ]
+            then
+                echo "======================================================================================="
+                echo "JobID: ${JOB}"
+                echo "$(curl -s --header "PRIVATE-TOKEN: ${ACCESS_TOKEN}" "${HOST}${API_ENDPOINT}/${PROJECT_ID}/jobs/${JOB}/trace")"
+            fi
+        done
+    fi
+
+    if [ $PIPELINE_STATUS = 'failed' ] || [ $PIPELINE_STATUS = 'canceled' ]
+    then
+        exit 1
+    fi
+
+else
+    echo 'Unable to create pipeline'
+    exit 1
+fi

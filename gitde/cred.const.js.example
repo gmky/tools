@@ -1,0 +1,15 @@
+const GIT_HOST = 'gitlab.com'
+const GIT_USER = ''
+const GIT_TOKEN = ''
+const GIT_GROUP_ID = 0
+const GIT_DEFAULT_BRANCH = 'master'
+const GIT_WORKDIR = 'sources'
+
+module.exports = {
+    GIT_HOST,
+    GIT_USER,
+    GIT_TOKEN,
+    GIT_GROUP_ID,
+    GIT_WORKDIR,
+    GIT_DEFAULT_BRANCH
+}
